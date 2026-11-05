@@ -2,7 +2,7 @@
 
 A blockchain built from scratch in **Node.js**, with no blockchain libraries. It has signed transactions, proof of work, mining rewards, a REST API, a web dashboard, and a multi-node peer-to-peer network that stays in sync using the "longest valid chain wins" rule.
 
-![Dashboard](E:\Blockchain project\my-blockchain\screenshot\Screenshot 2026-11-04 183507.png)
+![Dashboard](docs/dashboard.png)
 
 ## Features
 
