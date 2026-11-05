@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>My Blockchain</title>
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            background: #f4f6fb;
+            color: #1f2937;
+            margin: 0;
+            padding: 24px;
+        }
+
+        h1 {
+            margin: 0 0 4px;
+        }
+
+        .sub {
+            color: #6b7280;
+            margin-bottom: 20px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        .card {
+            background: #fff;
+            border-radius: 10px;
+            padding: 16px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, .1);
+        }
+
+        .card h2 {
+            margin: 0 0 12px;
+            font-size: 18px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        td,
+        th {
+            text-align: left;
+            padding: 6px 4px;
+            border-bottom: 1px solid #eef0f4;
+        }
+
+        label {
+            display: block;
+            margin: 8px 0 4px;
+            font-size: 14px;
+            color: #4b5563;
+        }
+
+        select,
+        input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            box-sizing: border-box;
+        }
+
+        button {
+            margin-top: 12px;
+            padding: 10px 16px;
+            border: none;
+            border-radius: 6px;
+            background: #2563eb;
+            color: #fff;
+            font-size: 15px;
+            cursor: pointer;
+        }
+
+        button:disabled {
+            background: #93a3c9;
+            cursor: wait;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .ok {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .bad {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        #message {
+            margin: 0 0 16px;
+            padding: 10px 14px;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .msg-ok {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .msg-err {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .block {
+            border-left: 4px solid #2563eb;
+            background: #f9fafb;
+            padding: 10px 14px;
+            margin-bottom: 12px;
+            border-radius: 6px;
+        }
+
+        .block code {
+            font-size: 12px;
+            color: #6b7280;
+        }
+
+        .tx {
+            font-size: 14px;
+            margin: 3px 0;
+        }
+
+        .muted {
+            color: #6b7280;
+            font-size: 14px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>My Blockchain</h1>
+    <div class="sub">
+        <span id="blocks">0</span> blocks &nbsp;|&nbsp; Chain: <span id="valid" class="badge ok">checking...</span>
+        &nbsp;|&nbsp; <span id="node"></span>
+    </div>
+
+    <div id="message"></div>
+
+    <div class="grid">
+        <div class="card">
+            <h2>Wallets</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Balance</th>
+                    </tr>
+                </thead>
+                <tbody id="wallets"></tbody>
+            </table>
+        </div>
+
+        <div class="card">
+            <h2>Send coins</h2>
+            <label>From</label><select id="from"></select>
+            <label>To</label><select id="to"></select>
+            <label>Amount</label><input id="amount" type="number" min="1" value="10">
+            <button id="sendBtn">Send</button>
+        </div>
+
+        <div class="card">
+            <h2>Mine a block</h2>
+            <p class="muted">Mining seals the pending transactions into a new block and pays the miner 100 coins.</p>
+            <label>Miner</label><select id="miner"></select>
+            <button id="mineBtn">Mine</button>
+        </div>
+
+        <div class="card">
+            <h2>Pending transactions</h2>
+            <div id="pending"></div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Blocks (newest first)</h2>
+        <div id="chain"></div>
+    </div>
+
+    <script>
+        const $ = (id) => document.getElementById(id);
+        let nameByAddress = {};
+
+        async function api(method, path, body) {
+            const res = await fetch(path, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: body ? JSON.stringify(body) : undefined,
+            });
+            return { ok: res.ok, data: await res.json() };
+        }
+
+        function show(text, isError) {
+            const box = $('message');
+            box.textContent = text;
+            box.className = isError ? 'msg-err' : 'msg-ok';
+            box.style.display = 'block';
+        }
+
+        function who(address) {
+            if (address === null) return 'NETWORK';
+            return nameByAddress[address] || address.slice(-8);
+        }
+
+        function txLine(tx) {
+            const reward = tx.from === null ? ' (mining reward)' : '';
+            return `<div class="tx">${who(tx.from)} → ${who(tx.to)} : <b>${tx.amount}</b>${reward}</div>`;
+        }
+
+        // Fill a dropdown only once, so your selection is not reset on refresh
+        function fillSelect(id, names) {
+            const select = $(id);
+            if (select.options.length === names.length) return;
+            select.innerHTML = names.map((n) => `<option value="${n}">${n}</option>`).join('');
+        }
+
+        async function refresh() {
+            const status = await api('GET', '/status');
+            $('node').textContent = `Node ${status.data.node} · ${status.data.peers.length} peers`;
+
+            const [chainRes, walletsRes, pendingRes] = await Promise.all([
+                api('GET', '/chain'),
+                api('GET', '/wallets'),
+                api('GET', '/pending'),
+            ]);
+
+            const wallets = walletsRes.data;
+            nameByAddress = {};
+            wallets.forEach((w) => (nameByAddress[w.address] = w.name));
+
+            // Header
+            $('blocks').textContent = chainRes.data.length;
+            const valid = $('valid');
+            valid.textContent = chainRes.data.valid ? 'VALID' : 'BROKEN';
+            valid.className = 'badge ' + (chainRes.data.valid ? 'ok' : 'bad');
+
+            // Wallets table and dropdowns
+            $('wallets').innerHTML = wallets
+                .map((w) => `<tr><td>${w.name}</td><td><b>${w.balance}</b></td></tr>`)
+                .join('');
+            const names = wallets.map((w) => w.name);
+            fillSelect('from', names);
+            fillSelect('to', names);
+            fillSelect('miner', names);
+
+            // Pending
+            $('pending').innerHTML = pendingRes.data.length
+                ? pendingRes.data.map(txLine).join('')
+                : '<span class="muted">Nothing waiting. Send some coins first.</span>';
+
+            // Blocks, newest first
+            $('chain').innerHTML = [...chainRes.data.chain]
+                .reverse()
+                .map((b) => `
+        <div class="block">
+          <b>Block #${b.index}</b> &nbsp; <span class="muted">nonce ${b.nonce}</span><br>
+          <code>hash: ${b.hash.slice(0, 24)}...</code><br>
+          <code>prev: ${b.previousHash.slice(0, 24)}...</code>
+          <div style="margin-top:6px">
+            ${b.transactions.length ? b.transactions.map(txLine).join('') : '<span class="muted">Genesis block (no transactions)</span>'}
+          </div>
+        </div>`)
+                .join('');
+        }
+
+        $('sendBtn').onclick = async () => {
+            const { ok, data } = await api('POST', '/transactions', {
+                from: $('from').value,
+                to: $('to').value,
+                amount: Number($('amount').value),
+            });
+            show(ok ? data.message : data.error, !ok);
+            refresh();
+        };
+
+        $('mineBtn').onclick = async () => {
+            const btn = $('mineBtn');
+            btn.disabled = true;
+            btn.textContent = 'Mining...';
+            const { ok, data } = await api('POST', '/mine', { miner: $('miner').value });
+            show(ok ? data.message : data.error, !ok);
+            btn.disabled = false;
+            btn.textContent = 'Mine';
+            refresh();
+        };
+
+        refresh();
+        setInterval(refresh, 3000);
+    </script>
+</body>
+
+</html>
